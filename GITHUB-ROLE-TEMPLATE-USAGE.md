@@ -70,10 +70,7 @@ Deploy one role per repository and per environment:
 aws cloudformation deploy \
   --stack-name terraform-core-github-iam-role-dev-aws-iam-roles \
   --template-file cloudformation/github-iam-role.yaml \
-  --parameter-overrides \
-    Organization=faccomichele \
-    ProjectName=aws-iam-roles \
-    Environment=dev \
+    Organization=faccomichele-org
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
