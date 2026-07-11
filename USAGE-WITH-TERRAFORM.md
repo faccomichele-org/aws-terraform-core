@@ -1,421 +1,125 @@
-# Using the CloudFormation-Deployed Backend with Terraform
+# Using The Central Backend With Terraform
 
-After deploying the CloudFormation stack, you can use the created infrastructure as a backend for your Terraform projects.
+This document covers the command-level workflow for consuming the centralized Terraform backend created by `cloudformation/backend-setup.yaml`.
 
-## Step 1: Retrieve Backend Configuration
+For the system design and deployment topology, see [README.md](./README.md).
 
-Get the backend configuration from AWS SSM Parameter Store:
+## Preconditions
+
+Before using this backend from a Terraform project:
+
+1. The central backend account must already have `cloudformation/backend-setup.yaml` deployed for the target environment.
+2. The AWS account running Terraform must be included in `AllowedAssumeRoleAccountIDs` on that central backend stack.
+3. The AWS principal used by Terraform must have permission to assume the central backend state role.
+4. If GitHub Actions is running Terraform, the account-local role should already include the managed policies created by `cloudformation/github-terraform-policies.yaml`.
+
+## Required Backend Values
+
+The backend configuration needs:
+
+- the state bucket name in the central account
+- the target state key for the current Terraform project
+- the AWS region
+- the ARN of the central backend state role
+
+The exact values come from the deployed backend stack and its environment.
+
+## Example Backend Configuration
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "terraform-core-aws-state-files-dev-123456789012"
+    key    = "aws-iam-roles/terraform.tfstate"
+    region = "eu-west-1"
+
+    assume_role = {
+      role_arn = "arn:aws:iam::123456789012:role/terraform-core-backend-setup-dev-TfStateRole-ABCDEFG12345"
+    }
+
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+```
+
+## Terraform Initialization
+
+Initialize Terraform normally once the backend block is in place:
 
 ```bash
-# Replace {ProjectName} and {Environment} with your stack's parameter values
-# For example: /terraform-core-aws/dev/backend_configuration_hcl
-aws ssm get-parameter \
-  --name /{ProjectName}/{Environment}/backend_configuration_hcl \
-  --with-decryption \
-  --query 'Parameter.Value' \
-  --output text
+terraform init
 ```
 
-This will output something like:
+If you prefer to keep backend values outside source control, use a backend config file:
 
 ```hcl
-terraform {
-  backend "s3" {
-    bucket        = "terraform-core-aws-state-files-dev-123456789012"
-    key           = "CHANGE_ME/terraform.tfstate"
-    region        = "us-east-1"
-    assume_role = {
-      role_arn      = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
-    }
-    encrypt       = true
-    use_lockfile  = true
-  }
-}
-```
-
-## Step 2: Configure Your Terraform Project
-
-Create or update your Terraform project's backend configuration:
-
-### Option A: In main.tf
-
-```hcl
-terraform {
-  required_version = ">= 1.0"
-  
-  # Backend configuration for remote state
-  backend "s3" {
-    bucket        = "terraform-core-aws-state-files-dev-123456789012"
-    key           = "my-project/terraform.tfstate"  # <- CHANGE THIS for each project
-    region        = "us-east-1"
-    assume_role = {
-      role_arn      = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
-    }
-    encrypt       = true
-    use_lockfile  = true
-  }
-  
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-```
-
-### Option B: In backend.tf (Separate File)
-
-Create a file named `backend.tf`:
-
-```hcl
-terraform {
-  backend "s3" {
-    bucket        = "terraform-core-aws-state-files-dev-123456789012"
-    key           = "my-project/terraform.tfstate"
-    region        = "us-east-1"
-    assume_role = {
-      role_arn      = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
-    }
-    encrypt       = true
-    use_lockfile  = true
-  }
-}
-```
-
-### Option C: Using Backend Config File
-
-Create a file named `backend-config.tfbackend`:
-
-```hcl
-bucket  = "terraform-core-aws-state-files-dev-123456789012"
-key     = "my-project/terraform.tfstate"
-region  = "us-east-1"
+bucket = "terraform-core-aws-state-files-dev-123456789012"
+key    = "aws-iam-roles/terraform.tfstate"
+region = "eu-west-1"
 
 assume_role = {
-  role_arn = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
+  role_arn = "arn:aws:iam::123456789012:role/terraform-core-backend-setup-dev-TfStateRole-ABCDEFG12345"
 }
 
 encrypt      = true
 use_lockfile = true
 ```
 
-Then initialize with:
+Then run:
 
 ```bash
 terraform init -backend-config=backend-config.tfbackend
 ```
 
-### Attaching the SSM Read Policy
+## GitHub Actions Flow
 
-- This CloudFormation stack creates a standalone managed policy named `${ProjectName}-ssm-read-${Environment}` (resource `SSMParameterReadPolicy`) which grants `ssm:GetParameter` and `ssm:GetParameters` for the parameter `/${ProjectName}/${Environment}/backend_configuration_hcl`.
+When Terraform runs from GitHub Actions in a target account, the expected flow is:
 
-- To allow a deployment role (for example the role used by your CI or by a peer Terraform repo) to retrieve the backend configuration from SSM, attach this managed policy to that role. Example using the AWS CLI (replace placeholders):
+1. GitHub Actions assumes the repository role created from `cloudformation/github-iam-role.yaml`.
+2. That role has the managed policies from `cloudformation/github-terraform-policies.yaml` attached.
+3. Those policies allow the workflow to:
+   - read the SSM values that identify the central backend account and role suffix
+   - assume the central backend state role
+   - access the shared artifacts bucket in the central account
+4. Terraform uses the central S3 backend through the assumed backend role.
 
-```bash
-aws iam attach-role-policy \
-  --role-name <deployment-role-name> \
-  --policy-arn arn:aws:iam::<account-id>:policy/${ProjectName}-ssm-read-<env>
-```
+## Shared Artifacts Bucket
 
-- In Terraform you can attach it using a `data` lookup and `aws_iam_role_policy_attachment`:
+The central backend stack also creates a shared artifacts bucket for cross-account GitHub Actions usage.
 
-```hcl
-data "aws_iam_policy" "ssm_read" {
-  name = "${ProjectName}-ssm-read-${Environment}"
-}
+Use it for files that should live alongside the centralized backend model, such as:
 
-resource "aws_iam_role_policy_attachment" "attach_ssm_read" {
-  role       = aws_iam_role.deployment_role.name
-  policy_arn = data.aws_iam_policy.ssm_read.arn
-}
-```
+- generated Terraform plan artifacts
+- packaged files reused across account pipelines
+- workflow outputs that need to be exchanged between automation steps or accounts
 
-- Attaching this policy (or granting equivalent SSM read permissions) ensures peer repositories can always pull the updated backend configuration from SSM.
+The shared artifacts bucket is separate from the Terraform state bucket and is accessed through the `${ProjectName}-s3-artifacts-access-${Environment}` managed policy.
 
-## Step 3: Initialize Terraform
+## Verification Commands
 
-```bash
-terraform init
-```
-
-You should see output similar to:
-
-```
-Initializing the backend...
-
-Successfully configured the backend "s3"! Terraform will automatically
-use this backend unless the backend configuration changes.
-
-Initializing provider plugins...
-...
-Terraform has been successfully initialized!
-```
-
-## Step 4: Verify State Storage
-
-After running `terraform apply`, verify the state file is stored in S3:
+Verify the caller identity used by Terraform or GitHub Actions:
 
 ```bash
-# List objects in the state bucket
-aws s3 ls s3://terraform-core-aws-state-files-dev-123456789012/my-project/
-
-# Should show: terraform.tfstate
+aws sts get-caller-identity
 ```
 
-## Important Notes
-
-### 🔑 Key Parameter
-
-**IMPORTANT**: Change the `key` parameter for each Terraform project!
-
-- Use a unique key for each project to avoid state conflicts
-- Recommended format: `<project-name>/terraform.tfstate`
-- Examples:
-  - `web-app/terraform.tfstate`
-  - `database/terraform.tfstate`
-  - `networking/terraform.tfstate`
-  - `team-a/project-x/terraform.tfstate`
-
-### 🔐 IAM Role Assumption
-
-The backend configuration uses IAM role assumption for authentication:
-
-- Ensure your AWS credentials have permission to assume the role
-- The role ARN is: `arn:aws:iam::<account-id>:role/terraform-core-aws-state-files-<env>`
-- The assume role policy allows principals from the same AWS account
-
-To assume the role manually (for testing):
+Verify access to the central shared artifacts bucket:
 
 ```bash
-aws sts assume-role \
-  --role-arn arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev \
-  --role-session-name test-session
+aws s3 ls s3://terraform-core-aws-shared-artifacts-dev-123456789012/
 ```
 
-### 🔒 Encryption
-
-- All state files are encrypted at rest using AES256
-- The `encrypt = true` setting ensures encryption is enforced
-- Use `use_lockfile = true` for state file locking (Terraform 1.1+)
-
-### 🌍 Multiple Environments
-
-For multiple environments, use different stacks:
-
-```hcl
-# Development
-terraform {
-  backend "s3" {
-    bucket = "terraform-core-aws-state-files-dev-123456789012"
-    key    = "my-project/terraform.tfstate"
-    region = "us-east-1"
-    assume_role = {
-      role_arn = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
-    }
-    encrypt      = true
-    use_lockfile = true
-  }
-}
-
-# Production
-terraform {
-  backend "s3" {
-    bucket = "terraform-core-aws-state-files-prod-123456789012"
-    key    = "my-project/terraform.tfstate"
-    region = "us-east-1"
-    assume_role = {
-      role_arn = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-prod"
-    }
-    encrypt      = true
-    use_lockfile = true
-  }
-}
-```
-
-## Complete Example Project
-
-Here's a complete example Terraform project using the remote backend:
-
-### Directory Structure
-```
-my-terraform-project/
-├── backend.tf
-├── main.tf
-├── variables.tf
-└── outputs.tf
-```
-
-### backend.tf
-```hcl
-terraform {
-  backend "s3" {
-    bucket        = "terraform-core-aws-state-files-dev-123456789012"
-    key           = "example-project/terraform.tfstate"
-    region        = "us-east-1"
-    assume_role = {
-      role_arn      = "arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev"
-    }
-    encrypt       = true
-    use_lockfile  = true
-  }
-}
-```
-
-### main.tf
-```hcl
-terraform {
-  required_version = ">= 1.0"
-  
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
-# Example resource
-resource "aws_s3_bucket" "example" {
-  bucket_prefix = "example-bucket-"
-  
-  tags = {
-    Name        = "Example Bucket"
-    Environment = var.environment
-  }
-}
-```
-
-### variables.tf
-```hcl
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
-}
-```
-
-### outputs.tf
-```hcl
-output "bucket_name" {
-  description = "Name of the created bucket"
-  value       = aws_s3_bucket.example.id
-}
-```
-
-### Deploy the Example Project
+Verify the state location after `terraform apply`:
 
 ```bash
-# Initialize
-terraform init
-
-# Plan
-terraform plan
-
-# Apply
-terraform apply
-
-# Verify state in S3
-aws s3 ls s3://terraform-core-aws-state-files-dev-123456789012/example-project/
-
-# Clean up
-terraform destroy
+aws s3 ls s3://terraform-core-aws-state-files-dev-123456789012/aws-iam-roles/
 ```
 
-## Migrating Existing Local State
+## Key Rules
 
-If you have an existing Terraform project with local state and want to migrate to the remote backend:
-
-1. **Backup your local state**:
-   ```bash
-   cp terraform.tfstate terraform.tfstate.backup
-   ```
-
-2. **Add backend configuration** to your Terraform files (as shown above)
-
-3. **Initialize with migration**:
-   ```bash
-   terraform init -migrate-state
-   ```
-
-4. **Confirm migration** when prompted:
-   ```
-   Do you want to copy existing state to the new backend?
-   Enter a value: yes
-   ```
-
-5. **Verify state was migrated**:
-   ```bash
-   terraform state list
-   aws s3 ls s3://terraform-core-aws-state-files-dev-123456789012/my-project/
-   ```
-
-6. **Remove local state files** (after verification):
-   ```bash
-   rm terraform.tfstate terraform.tfstate.backup
-   ```
-
-## Troubleshooting
-
-### Error: "Error loading state: AccessDenied"
-
-**Solution**: Ensure your AWS credentials have permission to assume the IAM role:
-
-```bash
-# Test role assumption
-aws sts assume-role \
-  --role-arn arn:aws:iam::123456789012:role/terraform-core-aws-state-files-dev \
-  --role-session-name test
-```
-
-### Error: "Error acquiring the state lock"
-
-**Solution**: Another Terraform operation is in progress or a previous operation failed to release the lock. Wait for the other operation to complete or manually release the lock:
-
-```bash
-# Force unlock (use with caution)
-terraform force-unlock <lock-id>
-```
-
-### Error: "S3 bucket does not exist"
-
-**Solution**: Verify the CloudFormation stack was deployed successfully and the bucket exists:
-
-```bash
-aws cloudformation describe-stacks --stack-name terraform-core-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`StateBucketName`].OutputValue' --output text
-```
-
-### Error: "Error loading backend config"
-
-**Solution**: Check your backend configuration syntax. Ensure all required parameters are present:
-- `bucket`
-- `key`
-- `region`
-
-## Best Practices
-
-1. **Unique Keys**: Always use unique state file keys for each project
-2. **Environment Separation**: Use separate stacks for dev, staging, and production
-3. **State Locking**: Enable state locking with `use_lockfile = true` (Terraform 1.1+)
-4. **Version Control**: Do NOT commit state files to version control
-5. **Access Control**: Limit who can assume the IAM role for production environments
-6. **Backup**: S3 versioning is enabled, allowing you to recover previous state versions
-7. **Encryption**: Always use `encrypt = true` in backend configuration
-8. **Documentation**: Document which projects use which state file keys
-
-## Additional Resources
-
-- [Terraform S3 Backend Documentation](https://www.terraform.io/docs/language/settings/backends/s3.html)
-- [Terraform State Documentation](https://www.terraform.io/docs/language/state/index.html)
-- [AWS S3 Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
+1. Use a unique `key` per Terraform project.
+2. Keep backend state in the central account only.
+3. Do not create per-repository backend buckets when using this model.
+4. Update the central backend stack whenever a new AWS account must participate.
+5. Treat the account-local GitHub policies and roles as consumers of the central backend, not replacements for it.
