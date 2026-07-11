@@ -38,7 +38,7 @@ Parameters:
   Organization:
     Type: String
     Description: Name of the organization
-    Default: faccomichele
+    Default: faccomichele-org
     MinLength: 1
     MaxLength: 63
     AllowedPattern: ^[a-z0-9-]+$
@@ -88,7 +88,7 @@ Resources:
             NoncurrentVersionExpiration:
               NoncurrentDays: !If
                 - IsProd
-                - 30
+                - 90
                 - 7
       Tags:
         - Key: Project
@@ -166,7 +166,7 @@ Resources:
         - Key: Region
           Value: !Ref 'AWS::Region'
 
-  # S3 bucket for shared files accessible by the allowed accounts
+  # S3 bucket for shared files accessible by the allowed accounts, to store GitHub Action artifacts
   SharedArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -187,13 +187,13 @@ Resources:
         Rules:
           - Id: shared-files-lifecycle
             Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 30
             NoncurrentVersionExpiration:
-              NoncurrentDays: !If
-                - IsProd
-                - 30
-                - 7
+              NoncurrentDays: 7
             AbortIncompleteMultipartUpload:
-              DaysAfterInitiation: 2
+              DaysAfterInitiation: 3
             ExpirationInDays: !If
               - IsProd
               - 1828

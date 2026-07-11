@@ -1,227 +1,159 @@
-# GitHub Actions IAM Role Template - Usage Guide
+# GitHub Actions Account Setup And Role Deployment
 
-This template (`github-iam-role-template.yaml`) creates a repository-specific IAM role for GitHub Actions workflows. It's designed to be copied to other repositories and customized as needed.
+This document covers the command-level setup for GitHub Actions access in each AWS account.
 
-## Prerequisites
+For the overall design and template responsibilities, see [README.md](./README.md).
 
-Before using this template, ensure you have deployed:
+## What Gets Deployed Per Account
 
-1. **Core Infrastructure** (`terraform-core-allinone.yaml`) - Creates the S3 bucket, IAM role, and SSM parameter for Terraform state
-2. **GitHub OIDC Provider** (`github-identity-provider.yaml`) - Creates the shared OIDC provider for GitHub Actions
+Each target AWS account uses three layers:
 
-## Quick Start
+1. `cloudformation/github-identity-provider.yaml`
+Deployed once per account to create the GitHub OIDC provider.
 
-### Step 1: Copy the Template
+2. `cloudformation/github-terraform-policies.yaml`
+Deployed once per account and per environment to create the shared managed policies used by repository roles.
 
-Copy `github-iam-role-template.yaml` to your target repository.
+3. `cloudformation/github-iam-role.yaml`
+Deployed once per repository and per environment to create the GitHub Actions execution role.
 
-### Step 2: Update Parameters
+## Deployment Order
 
-Open the file and update the default values in the Parameters section:
+For a new account, use this order:
 
-```yaml
-Parameters:
-  Organization:
-    Default: faccomichele  # Your GitHub organization
-  
-  RepositoryName:
-    Default: my-app-repository  # ⚠️ CHANGE THIS to your repository name
-  
-  Environment:
-    Default: dev  # Change if deploying to stg/prod
-  
-  SSMParameterReadPolicyName:
-    Default: terraform-core-aws-ssm-read-dev  # Match your environment
-```
+1. Deploy the GitHub OIDC provider.
+2. Deploy the common Terraform and artifacts policies for each environment.
+3. Deploy the repository-specific GitHub Actions role for each repository.
 
-### Step 3: Add Application-Specific Permissions (Optional)
-
-Add any managed policies or inline policies your application needs:
-
-```yaml
-Resources:
-  GitHubActionsRole:
-    Type: AWS::IAM::Role
-    Properties:
-      ManagedPolicyArns:
-        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${SSMParameterReadPolicyName}'
-        # ADD YOUR POLICIES HERE:
-        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess  # Example
-        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess  # Example
-      Policies:
-        - PolicyName: custom-permissions
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: '*'
-```
-
-### Step 4: Deploy the Stack
+## Step 1: Deploy The OIDC Provider
 
 ```bash
-aws cloudformation create-stack \
-  --stack-name my-app-github-role \
-  --template-body file://github-iam-role-template.yaml \
-  --parameters \
-    ParameterKey=Organization,ParameterValue=faccomichele \
-    ParameterKey=RepositoryName,ParameterValue=my-app-repository \
-    ParameterKey=Environment,ParameterValue=dev \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --region us-east-1
+aws cloudformation deploy \
+  --stack-name terraform-core-github-identity-provider \
+  --template-file cloudformation/github-identity-provider.yaml \
+  --parameter-overrides \
+    ProjectName=terraform-core-aws \
+    Organization=faccomichele-org \
+  --capabilities CAPABILITY_NAMED_IAM
 ```
 
-### Step 5: Get the Role ARN
+Deploy this only once in each AWS account.
 
-After deployment, retrieve the role ARN:
+## Step 2: Deploy The Common Managed Policies
+
+Run once per environment in the same AWS account:
 
 ```bash
-aws cloudformation describe-stacks \
-  --stack-name my-app-github-role \
-  --query 'Stacks[0].Outputs[?OutputKey==`GitHubActionsRoleArn`].OutputValue' \
-  --output text
+aws cloudformation deploy \
+  --stack-name terraform-core-github-terraform-policies-dev \
+  --template-file cloudformation/github-terraform-policies.yaml \
+  --parameter-overrides \
+    ProjectName=terraform-core-aws \
+    Organization=faccomichele-org \
+    Environment=dev \
+  --capabilities CAPABILITY_NAMED_IAM
 ```
 
-### Step 6: Use in GitHub Actions Workflow
+This stack creates:
 
-Create or update `.github/workflows/deploy.yml` in your repository:
+- `terraform-core-aws-tf-access-dev`
+- `terraform-core-aws-ssm-read-dev`
+- `terraform-core-aws-s3-artifacts-access-dev`
+
+Repeat for `stg` and `prod` as needed.
+
+## Step 3: Deploy The Repository Role
+
+Deploy one role per repository and per environment:
+
+```bash
+aws cloudformation deploy \
+  --stack-name terraform-core-github-iam-role-dev-aws-iam-roles \
+  --template-file cloudformation/github-iam-role.yaml \
+    Organization=faccomichele-org
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+## What The Repository Role Provides
+
+The role created by `cloudformation/github-iam-role.yaml`:
+
+- trusts GitHub Actions via the local OIDC provider
+- attaches the common managed policies created by `github-terraform-policies.yaml`
+- includes inline IAM permissions for role and customer-managed policy administration in the local account
+
+With the current template, the role can:
+
+- list and inspect IAM roles and policies with IAM APIs that require `Resource: *`
+- create, update, delete, tag, and untag IAM roles in the local account
+- attach and detach managed policies to roles
+- manage inline role policies
+- create, version, delete, and tag customer-managed IAM policies in the local account
+
+This is intended for repositories such as `aws-iam-roles` that use Terraform from GitHub Actions to manage IAM as code.
+
+## Example GitHub Actions Workflow
 
 ```yaml
-name: Deploy
+name: Terraform
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  deploy:
+  terraform:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write  # Required for OIDC
-      contents: read
-    
+
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Configure AWS Credentials
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/stack-name-GitHubActionsRole-ABC123  # Use the ARN from step 5
-          aws-region: us-east-1
-      
-      - name: Verify AWS Identity
-        run: |
-          aws sts get-caller-identity
-          
-      - name: Get Terraform Backend Config
-        run: |
-          # Replace {ProjectName} and {Environment} with your stack's parameter values
-          # For example: /terraform-core-aws/dev/backend_configuration_hcl
-          aws ssm get-parameter \
-            --name /{ProjectName}/{Environment}/backend_configuration_hcl \
-            --query 'Parameter.Value' \
-            --output text
+          role-to-assume: arn:aws:iam::123456789012:role/terraform-core-github-iam-role-dev-aws-iam-roles-GHARole-ABCDE12345
+          aws-region: eu-west-1
+
+      - name: Verify identity
+        run: aws sts get-caller-identity
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve
 ```
 
-## What This Template Provides
+## Verification Commands
 
-### Always Included
-
-✅ **SSM Parameter Read Access** - The role always includes the managed policy to read Terraform backend configuration from SSM  
-✅ **Repository-Specific Access** - Only your specified repository can assume this role  
-✅ **Auto-Generated Role Name** - CloudFormation generates a unique role name to avoid conflicts  
-✅ **Proper OIDC Configuration** - Correctly references the shared GitHub OIDC provider  
-
-### You Need to Add
-
-- Application-specific managed policies (S3, EC2, Lambda, etc.)
-- Custom inline policies for fine-grained permissions
-- Any other AWS resources your application needs
-
-## Parameters Explained
-
-| Parameter | Description | When to Change |
-|-----------|-------------|----------------|
-| `Organization` | Your GitHub organization | Only if different from default |
-| `RepositoryName` | Your repository name | **Always** - set to your repo |
-| `Environment` | Environment (dev/stg/prod) | When deploying to different environments |
-| `OIDCProviderStackName` | Name of OIDC provider stack | Only if you used a different stack name |
-| `SSMParameterReadPolicyName` | SSM policy name | Must match your environment (dev/stg/prod) |
-
-## Best Practices
-
-1. **One role per repository** - Deploy a separate role for each repository that needs AWS access
-2. **Least privilege** - Only add the permissions your application actually needs
-3. **Environment separation** - Deploy separate roles for dev/stg/prod environments
-4. **Stack naming** - Use a consistent naming pattern like `<repo-name>-github-role-<env>`
-5. **Document permissions** - Comment your added policies to explain why they're needed
-
-## Troubleshooting
-
-### Role ARN Not Found in Workflow
-
-Make sure you're using the complete ARN from the CloudFormation output, not just the role name.
-
-### Access Denied to SSM Parameter
-
-Verify the `SSMParameterReadPolicyName` parameter matches the policy created by your `terraform-core-aws` stack.
-
-### OIDC Provider Not Found
-
-Ensure the `github-identity-provider.yaml` stack has been deployed first and the OIDC provider exists:
+Check the OIDC provider exists in the account:
 
 ```bash
 aws iam list-open-id-connect-providers
 ```
 
-### Repository Cannot Assume Role
+Check the common policies exist:
 
-Check that:
-1. The `RepositoryName` parameter exactly matches your GitHub repository name
-2. The `Organization` parameter matches your GitHub organization
-3. The workflow has `permissions: id-token: write` set
-
-## Examples
-
-### Example 1: S3 Bucket Access
-
-```yaml
-ManagedPolicyArns:
-  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${SSMParameterReadPolicyName}'
-Policies:
-  - PolicyName: s3-access
-    PolicyDocument:
-      Version: '2012-10-17'
-      Statement:
-        - Effect: Allow
-          Action:
-            - s3:GetObject
-            - s3:PutObject
-          Resource: 'arn:aws:s3:::my-app-bucket/*'
+```bash
+aws iam list-policies --scope Local --query "Policies[?contains(PolicyName, 'terraform-core-aws')].[PolicyName,Arn]"
 ```
 
-### Example 2: Lambda Deployment
+Check the repository role trust and attached policies:
 
-```yaml
-ManagedPolicyArns:
-  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${SSMParameterReadPolicyName}'
-  - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+```bash
+aws iam get-role --role-name <role-name>
+aws iam list-attached-role-policies --role-name <role-name>
 ```
 
-### Example 3: Full Terraform Permissions
+## Common Operational Notes
 
-```yaml
-ManagedPolicyArns:
-  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/${SSMParameterReadPolicyName}'
-  - arn:aws:iam::aws:policy/PowerUserAccess
-```
-
-## Support
-
-For issues or questions:
-- Check the main [README.md](./README.md) for infrastructure setup
-- Review the [USAGE-WITH-TERRAFORM.md](./USAGE-WITH-TERRAFORM.md) for Terraform-specific guidance
-- Open an issue on the repository
+1. Keep the backend centralized in the dedicated backend account.
+2. Deploy the OIDC provider separately in every account where GitHub Actions must run.
+3. Deploy the common policies separately for each environment in each account.
+4. Deploy the repository role separately for each repository and environment combination.
+5. If a new AWS account must use the centralized backend, remember to update the central `backend-setup.yaml` stack so that account is added to `AllowedAssumeRoleAccountIDs`.

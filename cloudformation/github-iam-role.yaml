@@ -1,15 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'GitHub Actions IAM Role - Template for deploying repository-specific GitHub Actions roles that assume the shared OIDC provider'
 
-# Stack Name: gha-role-for-<repo-name>-${Environment}
-
-# DEPLOYMENT INSTRUCTIONS:
-# 1. Copy this template to your target repository
-# 2. Update the ProjectName parameter default to match your repository name
-# 3. Optionally adjust Environment parameter if needed
-# 4. Add additional managed policies or inline policies as required for your application
-# 5. Deploy with: aws cloudformation create-stack --stack-name github-role-for-<repo-name>-${Environment} --template-body file://github-iam-role-template.yaml --capabilities CAPABILITY_NAMED_IAM
-# 6. Set the outputs as GitHub Actions secrets in your repository (e.g., ${Environment}_AWS_ID, ${Environment}_ROLE_SECRET) for use in your workflows
+# Stack Name: terraform-core-github-iam-role-${Environment}
+# Deploy this stack once for account/environment combination
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -88,25 +81,52 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
       ManagedPolicyArns:
-        # REQUIRED: SSM parameter read policy to retrieve Terraform backend configuration
         - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-tf-access-${Environment}'
         - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-ssm-read-${Environment}'
         - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-s3-artifacts-access-${Environment}'
-        # ADD YOUR APPLICATION-SPECIFIC MANAGED POLICIES BELOW
-        # Examples:
-        # - arn:aws:iam::aws:policy/ReadOnlyAccess
-        # - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/my-custom-policy'
-      # ADD INLINE POLICIES HERE IF NEEDED
-      # Policies:
-      #   - PolicyName: application-specific-policy
-      #     PolicyDocument:
-      #       Version: '2012-10-17'
-      #       Statement:
-      #         - Effect: Allow
-      #           Action:
-      #             - s3:GetObject
-      #             - s3:PutObject
-      #           Resource: !Sub 'arn:aws:s3:::my-bucket/*'
+      Policies:
+        - PolicyName: application-specific-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListEntitiesForPolicy
+                  - iam:ListPolicies
+                  - iam:ListPolicyTags
+                  - iam:ListPolicyVersions
+                  - iam:ListRoles
+                  - iam:ListRolePolicies
+                  - iam:ListRoleTags
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:UpdateRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/*'
+              - Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicy
+                  - iam:DeletePolicyVersion
+                  - iam:SetDefaultPolicyVersion
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:policy/*'
       Tags:
         - Key: Project
           Value: !Ref ProjectName

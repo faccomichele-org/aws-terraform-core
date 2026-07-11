@@ -34,7 +34,7 @@ Parameters:
   Organization:
     Type: String
     Description: Name of the organization
-    Default: faccomichele
+    Default: faccomichele-org
     MinLength: 1
     MaxLength: 63
     AllowedPattern: ^[a-z0-9-]+$
