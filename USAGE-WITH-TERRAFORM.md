@@ -29,7 +29,7 @@ The exact values come from the deployed backend stack and its environment.
 ```hcl
 terraform {
   backend "s3" {
-    bucket = "terraform-core-aws-state-files-dev-123456789012"
+    bucket = "aws-terraform-core-state-files-dev-123456789012"
     key    = "aws-iam-roles/terraform.tfstate"
     region = "eu-west-1"
 
@@ -54,7 +54,7 @@ terraform init
 If you prefer to keep backend values outside source control, use a backend config file:
 
 ```hcl
-bucket = "terraform-core-aws-state-files-dev-123456789012"
+bucket = "aws-terraform-core-state-files-dev-123456789012"
 key    = "aws-iam-roles/terraform.tfstate"
 region = "eu-west-1"
 
@@ -107,13 +107,13 @@ aws sts get-caller-identity
 Verify access to the central shared artifacts bucket:
 
 ```bash
-aws s3 ls s3://terraform-core-aws-shared-artifacts-dev-123456789012/
+aws s3 ls s3://aws-terraform-core-shared-artifacts-dev-123456789012/
 ```
 
 Verify the state location after `terraform apply`:
 
 ```bash
-aws s3 ls s3://terraform-core-aws-state-files-dev-123456789012/aws-iam-roles/
+aws s3 ls s3://aws-terraform-core-state-files-dev-123456789012/aws-iam-roles/
 ```
 
 ## Key Rules

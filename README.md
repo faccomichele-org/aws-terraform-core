@@ -1,4 +1,4 @@
-# terraform-core-aws
+# aws-terraform-core
 
 This repository defines the shared AWS foundation used by Terraform and GitHub Actions across accounts and environments.
 

@@ -32,7 +32,7 @@ aws cloudformation deploy \
   --stack-name terraform-core-github-identity-provider \
   --template-file cloudformation/github-identity-provider.yaml \
   --parameter-overrides \
-    ProjectName=terraform-core-aws \
+    ProjectName=aws-terraform-core \
     Organization=faccomichele-org \
   --capabilities CAPABILITY_NAMED_IAM
 ```
@@ -48,7 +48,7 @@ aws cloudformation deploy \
   --stack-name terraform-core-github-terraform-policies-dev \
   --template-file cloudformation/github-terraform-policies.yaml \
   --parameter-overrides \
-    ProjectName=terraform-core-aws \
+    ProjectName=aws-terraform-core \
     Organization=faccomichele-org \
     Environment=dev \
   --capabilities CAPABILITY_NAMED_IAM
@@ -56,9 +56,9 @@ aws cloudformation deploy \
 
 This stack creates:
 
-- `terraform-core-aws-tf-access-dev`
-- `terraform-core-aws-ssm-read-dev`
-- `terraform-core-aws-s3-artifacts-access-dev`
+- `aws-terraform-core-tf-access-dev`
+- `aws-terraform-core-ssm-read-dev`
+- `aws-terraform-core-s3-artifacts-access-dev`
 
 Repeat for `stg` and `prod` as needed.
 
@@ -140,7 +140,7 @@ aws iam list-open-id-connect-providers
 Check the common policies exist:
 
 ```bash
-aws iam list-policies --scope Local --query "Policies[?contains(PolicyName, 'terraform-core-aws')].[PolicyName,Arn]"
+aws iam list-policies --scope Local --query "Policies[?contains(PolicyName, 'aws-terraform-core')].[PolicyName,Arn]"
 ```
 
 Check the repository role trust and attached policies:

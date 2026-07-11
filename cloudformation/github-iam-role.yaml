@@ -25,7 +25,7 @@ Parameters:
   Organization:
     Type: String
     Description: GitHub organization name
-    Default: faccomichele
+    Default: faccomichele-org
     MinLength: 1
     MaxLength: 63
     AllowedPattern: ^[a-z0-9-]+$
@@ -81,9 +81,9 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
       ManagedPolicyArns:
-        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-tf-access-${Environment}'
-        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-ssm-read-${Environment}'
-        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/terraform-core-aws-s3-artifacts-access-${Environment}'
+        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/aws-terraform-core-tf-access-${Environment}'
+        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/aws-terraform-core-ssm-read-${Environment}'
+        - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/aws-terraform-core-s3-artifacts-access-${Environment}'
       Policies:
         - PolicyName: application-specific-policy
           PolicyDocument:

@@ -22,7 +22,7 @@ Parameters:
   ProjectName:
     Type: String
     Description: Name of the project
-    Default: terraform-core-aws
+    Default: aws-terraform-core
     MinLength: 1
     MaxLength: 63
     AllowedPattern: ^[a-z0-9-]+$
