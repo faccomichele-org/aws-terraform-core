@@ -33,7 +33,7 @@ aws cloudformation deploy \
   --template-file cloudformation/github-identity-provider.yaml \
   --parameter-overrides \
     ProjectName=aws-terraform-core \
-    Organization=faccomichele-org \
+    Organization=faccomichele \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
@@ -49,7 +49,7 @@ aws cloudformation deploy \
   --template-file cloudformation/github-terraform-policies.yaml \
   --parameter-overrides \
     ProjectName=aws-terraform-core \
-    Organization=faccomichele-org \
+    Organization=faccomichele \
     Environment=dev \
   --capabilities CAPABILITY_NAMED_IAM
 ```
@@ -70,7 +70,7 @@ Deploy one role per repository and per environment:
 aws cloudformation deploy \
   --stack-name terraform-core-github-iam-role-dev-aws-iam-roles \
   --template-file cloudformation/github-iam-role.yaml \
-    Organization=faccomichele-org
+    Organization=faccomichele
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
