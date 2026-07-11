@@ -187,9 +187,9 @@ Resources:
         Rules:
           - Id: shared-files-lifecycle
             Status: Enabled
-              Transitions:
-                - StorageClass: GLACIER_IR
-                  TransitionInDays: 30
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 30
             NoncurrentVersionExpiration:
               NoncurrentDays: 7
             AbortIncompleteMultipartUpload:
