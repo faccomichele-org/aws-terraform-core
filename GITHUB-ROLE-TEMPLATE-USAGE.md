@@ -6,7 +6,7 @@ For the overall design and template responsibilities, see [README.md](./README.m
 
 ## What Gets Deployed Per Account
 
-Each target AWS account uses three layers:
+Each target AWS account uses three layers from this repository, plus one repository-specific role template from the companion `aws-iam-roles` repository:
 
 1. `cloudformation/github-identity-provider.yaml`
 Deployed once per account to create the GitHub OIDC provider.
@@ -14,8 +14,8 @@ Deployed once per account to create the GitHub OIDC provider.
 2. `cloudformation/github-terraform-policies.yaml`
 Deployed once per account and per environment to create the shared managed policies used by repository roles.
 
-3. `cloudformation/github-iam-role.yaml`
-Deployed once per repository and per environment to create the GitHub Actions execution role.
+3. The repository-specific role template from `https://github.com/faccomichele/aws-iam-roles`
+Deployed once per repository and per environment from that repository's `cloudformation/github-iam-role.yaml` file.
 
 ## Deployment Order
 
@@ -23,7 +23,7 @@ For a new account, use this order:
 
 1. Deploy the GitHub OIDC provider.
 2. Deploy the common Terraform and artifacts policies for each environment.
-3. Deploy the repository-specific GitHub Actions role for each repository.
+3. Deploy the repository-specific GitHub Actions role from the `aws-iam-roles` repository for each repository.
 
 ## Step 1: Deploy The OIDC Provider
 
@@ -42,6 +42,11 @@ Deploy this only once in each AWS account.
 ## Step 2: Deploy The Common Managed Policies
 
 Run once per environment in the same AWS account:
+
+Before deploying, make sure these manual SSM parameters already exist in the target account, because the policies stack resolves them at deploy/runtime:
+
+- `/manual/global/central-account/account-id`
+- `/manual/${Environment}/terraform/state-file/role-secret`
 
 ```bash
 aws cloudformation deploy \
@@ -64,19 +69,22 @@ Repeat for `stg` and `prod` as needed.
 
 ## Step 3: Deploy The Repository Role
 
-Deploy one role per repository and per environment:
+Deploy one role per repository and per environment from a checkout of the `aws-iam-roles` repository. The template lives at `cloudformation/github-iam-role.yaml` in that repository:
 
 ```bash
 aws cloudformation deploy \
   --stack-name terraform-core-github-iam-role-dev-aws-iam-roles \
   --template-file cloudformation/github-iam-role.yaml \
-    Organization=faccomichele
+  --parameter-overrides \
+    ProjectName=aws-iam-roles \
+    Organization=faccomichele \
+    Environment=dev \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
 ## What The Repository Role Provides
 
-The role created by `cloudformation/github-iam-role.yaml`:
+The role created by `aws-iam-roles/cloudformation/github-iam-role.yaml`:
 
 - trusts GitHub Actions via the local OIDC provider
 - attaches the common managed policies created by `github-terraform-policies.yaml`
