@@ -29,6 +29,11 @@ Deploy it once per AWS account.
 
 4. `github-terraform-policies.yaml`
 Creates the common managed policies for one account and one environment.
+Prerequisites:
+- the manual SSM parameter `/manual/global/central-account/account-id` must already exist in the target account
+- the manual SSM parameter `/manual/${Environment}/terraform/state-file/role-secret` must already exist in the target account
+- `backend-setup.yaml` must already be deployed in the central account so the referenced state role and shared artifacts bucket exist
+
 These policies let GitHub Actions:
 - read the SSM parameters that point to the central backend account and role secret
 - assume the Terraform state role in the central backend account
@@ -61,7 +66,8 @@ Per account:
 - `backend-ssm.yaml`: once, then update it when the central account ID or backend role suffixes change
 - `github-identity-provider.yaml`: once
 - `github-terraform-policies.yaml`: once per environment
-- `github-iam-role.yaml`: once per repository and per environment
+
+The repository-specific role is deployed from the `aws-iam-roles` repository and should be in place before the workflows that depend on it.
 
 This separation keeps the backend centralized while keeping GitHub trust, managed policies, and repository execution roles local to the account where Terraform will run.
 
@@ -74,7 +80,6 @@ Use this order when onboarding a new account or environment:
 3. Deploy `backend-ssm.yaml` in each target account to publish those values under `/terraform-core/...`.
 4. Deploy `github-identity-provider.yaml` in the target account.
 5. Deploy `github-terraform-policies.yaml` in the target account for the same environment.
-6. Deploy `github-iam-role.yaml` in the target account for each repository that needs GitHub Actions access.
 
 ## Cross-Account Contract
 
@@ -126,20 +131,14 @@ These are intended to be attached to repository-specific roles instead of duplic
 
 ### `github-iam-role.yaml`
 
-Purpose:
-- create the GitHub Actions execution role for a specific repository in a specific account and environment
-
-Important behavior:
-- trust is scoped to `repo:${Organization}/${ProjectName}:*`
-- common backend-related permissions come from managed policies
-- repository-specific permissions are defined inline in this template
-- the current inline policy allows managing IAM roles and customer-managed IAM policies in the local account
+This template is no longer maintained in this repository.
+It now lives in [aws-iam-roles](https://github.com/faccomichele/aws-iam-roles) under `cloudformation/`, where it should be deployed before the core infrastructure workflows that depend on it.
 
 ## Typical Use Case
 
 For a repository such as `aws-iam-roles`:
 
-1. GitHub Actions assumes the repository role created by `github-iam-role.yaml` in the target account.
+1. GitHub Actions assumes the repository role created from the `aws-iam-roles` repository's `cloudformation/github-iam-role.yaml` template in the target account.
 2. That role can read the SSM parameters that identify the central backend account and role suffix.
 3. That role can assume the central Terraform state role.
 4. Terraform uses the central S3 backend for state.
@@ -154,7 +153,6 @@ cloudformation/
   backend-setup.yaml
   github-identity-provider.yaml
   github-terraform-policies.yaml
-  github-iam-role.yaml
 README.md
 USAGE-WITH-TERRAFORM.md
 GITHUB-ROLE-TEMPLATE-USAGE.md

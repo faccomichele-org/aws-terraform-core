@@ -12,6 +12,8 @@ Before using this backend from a Terraform project:
 2. The AWS account running Terraform must be included in `AllowedAssumeRoleAccountIDs` on that central backend stack.
 3. The AWS principal used by Terraform must have permission to assume the central backend state role.
 4. If GitHub Actions is running Terraform, the account-local role should already include the managed policies created by `cloudformation/github-terraform-policies.yaml`.
+5. If the workflow depends on the repository-specific GitHub Actions role, that role should already have been deployed from the `aws-iam-roles` repository's `cloudformation/github-iam-role.yaml` template.
+6. The manual SSM parameters `/manual/global/central-account/account-id` and `/manual/${Environment}/terraform/state-file/role-secret` must already exist in the target account before the policies stack is deployed.
 
 ## Required Backend Values
 
@@ -76,7 +78,7 @@ terraform init -backend-config=backend-config.tfbackend
 
 When Terraform runs from GitHub Actions in a target account, the expected flow is:
 
-1. GitHub Actions assumes the repository role created from `cloudformation/github-iam-role.yaml`.
+1. GitHub Actions assumes the repository role created from the `aws-iam-roles` repository's `cloudformation/github-iam-role.yaml` template.
 2. That role has the managed policies from `cloudformation/github-terraform-policies.yaml` attached.
 3. Those policies allow the workflow to:
    - read the SSM values that identify the central backend account and role suffix
