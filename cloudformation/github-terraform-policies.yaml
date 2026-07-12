@@ -82,6 +82,7 @@ Resources:
             Resource:
               - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/terraform-core/${Environment}/terraform/state-file/role-secret'
               - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/terraform-core/global/central-account/account-id'
+              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/terraform-core/${Environment}/terraform/state-file/bucket-region'
 
   # Standalone IAM managed policy for S3 artifacts access
   S3ArtifactsAccessPolicy:

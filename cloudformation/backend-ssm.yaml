@@ -19,6 +19,12 @@ Metadata:
           - DevRoleSecret
           - StgRoleSecret
           - ProdRoleSecret
+      - Label:
+          default: Environment Backend Bucket Regions
+        Parameters:
+          - DevBackendBucketRegion
+          - StgBackendBucketRegion
+          - ProdBackendBucketRegion
     ParameterLabels:
       CentralAccountId:
         default: Central Backend AWS Account ID
@@ -30,6 +36,12 @@ Metadata:
         default: Stg Role Secret Suffix
       ProdRoleSecret:
         default: Prod Role Secret Suffix
+      DevBackendBucketRegion:
+        default: Dev Backend Bucket Region
+      StgBackendBucketRegion:
+        default: Stg Backend Bucket Region
+      ProdBackendBucketRegion:
+        default: Prod Backend Bucket Region
 
 Parameters:
   CentralAccountId:
@@ -64,6 +76,21 @@ Parameters:
   ProdRoleSecret:
     Type: String
     Description: Backend role secret suffix for the prod environment
+    Default: ''
+
+  DevBackendBucketRegion:
+    Type: String
+    Description: Backend S3 bucket region for the dev environment
+    Default: ''
+
+  StgBackendBucketRegion:
+    Type: String
+    Description: Backend S3 bucket region for the stg environment
+    Default: ''
+
+  ProdBackendBucketRegion:
+    Type: String
+    Description: Backend S3 bucket region for the prod environment
     Default: ''
 
 Rules:
@@ -105,6 +132,45 @@ Rules:
           - !Not
             - !Equals [!Ref ProdRoleSecret, '']
         AssertDescription: ProdRoleSecret must be provided when EnvironmentNames includes prod.
+
+  DevBackendBucketRegionRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'dev']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg']
+              - !Equals [!Ref EnvironmentNames, 'dev,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref DevBackendBucketRegion, '']
+        AssertDescription: DevBackendBucketRegion must be provided when EnvironmentNames includes dev.
+
+  StgBackendBucketRegionRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'stg']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg']
+              - !Equals [!Ref EnvironmentNames, 'stg,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref StgBackendBucketRegion, '']
+        AssertDescription: StgBackendBucketRegion must be provided when EnvironmentNames includes stg.
+
+  ProdBackendBucketRegionRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,prod']
+              - !Equals [!Ref EnvironmentNames, 'stg,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref ProdBackendBucketRegion, '']
+        AssertDescription: ProdBackendBucketRegion must be provided when EnvironmentNames includes prod.
 
 Conditions:
   HasDev: !Or
@@ -159,6 +225,33 @@ Resources:
       Value: !Ref ProdRoleSecret
       Description: Terraform backend role secret suffix for the prod environment
 
+  DevBackendBucketRegionParameter:
+    Condition: HasDev
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/dev/terraform/state-file/bucket-region
+      Type: String
+      Value: !Ref DevBackendBucketRegion
+      Description: Terraform backend S3 bucket region for the dev environment
+
+  StgBackendBucketRegionParameter:
+    Condition: HasStg
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/stg/terraform/state-file/bucket-region
+      Type: String
+      Value: !Ref StgBackendBucketRegion
+      Description: Terraform backend S3 bucket region for the stg environment
+
+  ProdBackendBucketRegionParameter:
+    Condition: HasProd
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/prod/terraform/state-file/bucket-region
+      Type: String
+      Value: !Ref ProdBackendBucketRegion
+      Description: Terraform backend S3 bucket region for the prod environment
+
 Outputs:
   CentralAccountIdParameterName:
     Value: /terraform-core/global/central-account/account-id
@@ -178,5 +271,20 @@ Outputs:
     Condition: HasProd
     Value: /terraform-core/prod/terraform/state-file/role-secret
     Description: SSM parameter name for the prod backend role secret suffix
+
+  DevBackendBucketRegionParameterName:
+    Condition: HasDev
+    Value: /terraform-core/dev/terraform/state-file/bucket-region
+    Description: SSM parameter name for the dev backend S3 bucket region
+
+  StgBackendBucketRegionParameterName:
+    Condition: HasStg
+    Value: /terraform-core/stg/terraform/state-file/bucket-region
+    Description: SSM parameter name for the stg backend S3 bucket region
+
+  ProdBackendBucketRegionParameterName:
+    Condition: HasProd
+    Value: /terraform-core/prod/terraform/state-file/bucket-region
+    Description: SSM parameter name for the prod backend S3 bucket region
 
         
