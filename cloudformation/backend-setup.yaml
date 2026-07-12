@@ -259,19 +259,19 @@ Resources:
 
 Outputs:
   AwsId:
-    Value: !Sub '/manual/global/central-account/account-id = ${AWS::AccountId}'
-    Description: SSM parameter value to be manually configured for assuming the Terraform state role
+    Value: !Sub '/terraform-core/global/central-account/account-id = ${AWS::AccountId}'
+    Description: Value to publish through backend-ssm.yaml for assuming the Terraform state role
   SharedArtifactsBucketName:
     Value: !Ref SharedArtifactsBucket
     Description: Name of the shared artifacts S3 bucket
   RoleSecret:
     Value:
       Fn::Sub:
-        - '/manual/${Environment}/terraform/state-file/role-secret = ${SecretValue}'
+        - '/terraform-core/${Environment}/terraform/state-file/role-secret = ${SecretValue}'
         - SecretValue:
             Fn::Select:
               - 6
               - Fn::Split:
                   - "-"
                   - !GetAtt TfStateRole.Arn
-    Description: SSM parameter value to be manually configured for assuming the Terraform state role
+    Description: Value to publish through backend-ssm.yaml for assuming the Terraform state role

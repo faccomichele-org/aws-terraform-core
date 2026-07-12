@@ -4,9 +4,11 @@ This repository defines the shared AWS foundation used by Terraform and GitHub A
 
 The main design is documented here. Use [USAGE-WITH-TERRAFORM.md](./USAGE-WITH-TERRAFORM.md) for Terraform backend commands and [GITHUB-ROLE-TEMPLATE-USAGE.md](./GITHUB-ROLE-TEMPLATE-USAGE.md) for account-level GitHub Actions deployment steps.
 
+Reference article in Notion: [Core - Terraform Stack](https://app.notion.com/p/Core-Terraform-Stack-39af2896999f80c0a990f1e551ef82e7).
+
 ## Architecture
 
-The repository is split into three CloudFormation templates under `cloudformation/`:
+The repository is split into five CloudFormation templates under `cloudformation/`:
 
 1. `backend-setup.yaml`
 Creates the central backend resources for one environment in one central AWS account.
@@ -15,11 +17,17 @@ It owns:
 - the IAM role that other accounts assume to read and write that state
 - the shared artifacts S3 bucket used by GitHub Actions and peer accounts
 
-2. `github-identity-provider.yaml`
+2. `backend-ssm.yaml`
+Creates the SSM parameters consumed by account-local policy stacks.
+It publishes:
+- the central backend account ID under `/terraform-core/global/central-account/account-id`
+- the Terraform state role suffix for any selected standard environments under `/terraform-core/<env>/terraform/state-file/role-secret`
+
+3. `github-identity-provider.yaml`
 Creates the GitHub Actions OIDC identity provider in a target AWS account.
 Deploy it once per AWS account.
 
-3. `github-terraform-policies.yaml`
+4. `github-terraform-policies.yaml`
 Creates the common managed policies for one account and one environment.
 Prerequisites:
 - the manual SSM parameter `/manual/global/central-account/account-id` must already exist in the target account
@@ -27,10 +35,13 @@ Prerequisites:
 - `backend-setup.yaml` must already be deployed in the central account so the referenced state role and shared artifacts bucket exist
 
 These policies let GitHub Actions:
+- read the SSM parameters that point to the central backend account and role secret
 - assume the Terraform state role in the central backend account
 - read and write to the shared artifacts bucket in the central backend account
 
-Those manual SSM values are expected to be created outside this repository before the policies stack is deployed.
+5. `github-iam-role.yaml`
+Creates the repository-specific GitHub Actions IAM role for one account and one environment.
+This role trusts GitHub OIDC, attaches the common managed policies from `github-terraform-policies.yaml`, and adds repository-specific permissions on top. In the current template, the inline policy is set up so the role can manage IAM roles and customer-managed IAM policies in the local account. That makes it suitable for the `aws-iam-roles` repository to deploy IAM resources through GitHub Actions with Terraform.
 
 ## Deployment Topology
 
@@ -52,6 +63,7 @@ When you add a new AWS account that must use this backend, update the `AllowedAs
 Deploy the remaining templates in every AWS account where GitHub Actions must operate.
 
 Per account:
+- `backend-ssm.yaml`: once, then update it when the central account ID or backend role suffixes change
 - `github-identity-provider.yaml`: once
 - `github-terraform-policies.yaml`: once per environment
 
@@ -64,19 +76,19 @@ This separation keeps the backend centralized while keeping GitHub trust, manage
 Use this order when onboarding a new account or environment:
 
 1. Deploy `backend-setup.yaml` in the central account for the target environment.
-2. Record and publish the manual values exposed by the backend stack outputs.
-3. Deploy `github-identity-provider.yaml` in the target account.
-4. Deploy `github-terraform-policies.yaml` in the target account for the same environment.
-5. Deploy the repository-specific GitHub Actions role from the `aws-iam-roles` repository for each repository that needs GitHub Actions access.
+2. Collect the output values exposed by the backend stacks for the central account ID and each environment role suffix.
+3. Deploy `backend-ssm.yaml` in each target account to publish those values under `/terraform-core/...`.
+4. Deploy `github-identity-provider.yaml` in the target account.
+5. Deploy `github-terraform-policies.yaml` in the target account for the same environment.
 
 ## Cross-Account Contract
 
-The central backend stack exposes two manual values through outputs:
+The central backend stack exposes two values through outputs:
 
 1. the central account ID
 2. the generated suffix used to reconstruct the backend state role ARN
 
-The account-local policies stack reads those values through SSM dynamic references and uses them to build:
+The `backend-ssm.yaml` stack publishes those values into account-local SSM parameters, and the account-local policies stack reads them through SSM dynamic references to build:
 - the ARN of the central Terraform state role
 - the name of the shared artifacts bucket in the central account
 

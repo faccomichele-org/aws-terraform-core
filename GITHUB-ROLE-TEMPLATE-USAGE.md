@@ -6,26 +6,49 @@ For the overall design and template responsibilities, see [README.md](./README.m
 
 ## What Gets Deployed Per Account
 
-Each target AWS account uses three layers from this repository, plus one repository-specific role template from the companion `aws-iam-roles` repository:
 
-1. `cloudformation/github-identity-provider.yaml`
+Each target AWS account uses four layers:
+
+1. `cloudformation/backend-ssm.yaml`
+Deployed once per account to publish the central backend account ID and one or more environment role suffixes under `/terraform-core/...`.
+
+2. `cloudformation/github-identity-provider.yaml`
 Deployed once per account to create the GitHub OIDC provider.
 
-2. `cloudformation/github-terraform-policies.yaml`
+3. `cloudformation/github-terraform-policies.yaml`
 Deployed once per account and per environment to create the shared managed policies used by repository roles.
 
-3. The repository-specific role template from `https://github.com/faccomichele/aws-iam-roles`
-Deployed once per repository and per environment from that repository's `cloudformation/github-iam-role.yaml` file.
+4. `cloudformation/github-iam-role.yaml`
+Deployed once per repository and per environment to create the GitHub Actions execution role.
 
 ## Deployment Order
 
 For a new account, use this order:
 
-1. Deploy the GitHub OIDC provider.
-2. Deploy the common Terraform and artifacts policies for each environment.
-3. Deploy the repository-specific GitHub Actions role from the `aws-iam-roles` repository for each repository.
+1. Deploy `backend-ssm.yaml` with the central account ID and required environment role suffix values.
+2. Deploy the GitHub OIDC provider.
+3. Deploy the common Terraform and artifacts policies for each environment.
+4. Deploy the repository-specific GitHub Actions role for each repository.
 
-## Step 1: Deploy The OIDC Provider
+## Step 1: Deploy The Backend SSM Parameters
+
+Deploy once per target AWS account:
+
+```bash
+aws cloudformation deploy \
+  --stack-name terraform-core-backend-ssm \
+  --template-file cloudformation/backend-ssm.yaml \
+  --parameter-overrides \
+    CentralAccountId=123456789012 \
+    EnvironmentNames=dev,stg,prod \
+    DevRoleSecret=ABCDEFG12345 \
+    StgRoleSecret=HIJKLMN67890 \
+    ProdRoleSecret=OPQRSTU13579
+```
+
+Use the `CentralAccountId` and `*RoleSecret` values from the outputs of the central `cloudformation/backend-setup.yaml` stacks.
+
+## Step 2: Deploy The OIDC Provider
 
 ```bash
 aws cloudformation deploy \
@@ -39,7 +62,7 @@ aws cloudformation deploy \
 
 Deploy this only once in each AWS account.
 
-## Step 2: Deploy The Common Managed Policies
+## Step 3: Deploy The Common Managed Policies
 
 Run once per environment in the same AWS account:
 
@@ -67,7 +90,7 @@ This stack creates:
 
 Repeat for `stg` and `prod` as needed.
 
-## Step 3: Deploy The Repository Role
+## Step 4: Deploy The Repository Role
 
 Deploy one role per repository and per environment from a checkout of the `aws-iam-roles` repository. The template lives at `cloudformation/github-iam-role.yaml` in that repository:
 
