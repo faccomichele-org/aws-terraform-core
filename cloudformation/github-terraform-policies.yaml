@@ -63,7 +63,7 @@ Resources:
             Effect: Allow
             Action:
               - sts:AssumeRole
-            Resource: !Sub 'arn:aws:iam::{{resolve:ssm:/manual/global/central-account/account-id}}:role/terraform-core-backend-setup-${Environment}-TfStateRole-{{resolve:ssm:/manual/${Environment}/terraform/state-file/role-secret}}'
+            Resource: !Sub 'arn:aws:iam::{{resolve:ssm:/terraform-core/global/central-account/account-id}}:role/terraform-core-backend-setup-${Environment}-TfStateRole-{{resolve:ssm:/terraform-core/${Environment}/terraform/state-file/role-secret}}'
 
   # Standalone IAM managed policy for SSM parameter read access
   SSMParameterReadPolicy:
@@ -80,8 +80,8 @@ Resources:
               - ssm:GetParameter
               - ssm:GetParameters
             Resource:
-              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/manual/${Environment}/terraform/state-file/role-secret'
-              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/manual/global/central-account/account-id'
+              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/terraform-core/${Environment}/terraform/state-file/role-secret'
+              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/terraform-core/global/central-account/account-id'
 
   # Standalone IAM managed policy for S3 artifacts access
   S3ArtifactsAccessPolicy:
@@ -100,5 +100,5 @@ Resources:
               - s3:DeleteObject
               - s3:List*
             Resource:
-              - !Sub 'arn:aws:s3:::${ProjectName}-shared-artifacts-${Environment}-{{resolve:ssm:/manual/global/central-account/account-id}}/*'
-              - !Sub 'arn:aws:s3:::${ProjectName}-shared-artifacts-${Environment}-{{resolve:ssm:/manual/global/central-account/account-id}}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-shared-artifacts-${Environment}-{{resolve:ssm:/terraform-core/global/central-account/account-id}}/*'
+              - !Sub 'arn:aws:s3:::${ProjectName}-shared-artifacts-${Environment}-{{resolve:ssm:/terraform-core/global/central-account/account-id}}'

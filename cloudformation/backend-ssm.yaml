@@ -1,0 +1,182 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Publishes centralized Terraform backend values into account-local SSM parameters.'
+
+# Stack Name: terraform-core-backend-ssm
+# Deploy this stack in each account that consumes the centralized backend, for each region involved
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Backend Configuration
+        Parameters:
+          - CentralAccountId
+          - EnvironmentNames
+      - Label:
+          default: Environment Role Secrets
+        Parameters:
+          - DevRoleSecret
+          - StgRoleSecret
+          - ProdRoleSecret
+    ParameterLabels:
+      CentralAccountId:
+        default: Central Backend AWS Account ID
+      EnvironmentNames:
+        default: Environment Names
+      DevRoleSecret:
+        default: Dev Role Secret Suffix
+      StgRoleSecret:
+        default: Stg Role Secret Suffix
+      ProdRoleSecret:
+        default: Prod Role Secret Suffix
+
+Parameters:
+  CentralAccountId:
+    Type: String
+    Description: AWS account ID of the centralized Terraform backend account
+    AllowedPattern: '^[0-9]{12}$'
+    ConstraintDescription: Must be a 12-digit AWS account ID
+
+  EnvironmentNames:
+    Type: String
+    Description: Comma-separated list of standard environments to publish (supported values are dev,stg,prod in canonical order)
+    Default: dev,stg,prod
+    AllowedValues:
+      - dev
+      - stg
+      - prod
+      - dev,stg
+      - dev,prod
+      - stg,prod
+      - dev,stg,prod
+
+  DevRoleSecret:
+    Type: String
+    Description: Backend role secret suffix for the dev environment
+    Default: ''
+
+  StgRoleSecret:
+    Type: String
+    Description: Backend role secret suffix for the stg environment
+    Default: ''
+
+  ProdRoleSecret:
+    Type: String
+    Description: Backend role secret suffix for the prod environment
+    Default: ''
+
+Rules:
+  DevRoleSecretRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'dev']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg']
+              - !Equals [!Ref EnvironmentNames, 'dev,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref DevRoleSecret, '']
+        AssertDescription: DevRoleSecret must be provided when EnvironmentNames includes dev.
+
+  StgRoleSecretRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'stg']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg']
+              - !Equals [!Ref EnvironmentNames, 'stg,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref StgRoleSecret, '']
+        AssertDescription: StgRoleSecret must be provided when EnvironmentNames includes stg.
+
+  ProdRoleSecretRequiredWhenSelected:
+    Assertions:
+      - Assert: !Or
+          - !Not
+            - !Or
+              - !Equals [!Ref EnvironmentNames, 'prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,prod']
+              - !Equals [!Ref EnvironmentNames, 'stg,prod']
+              - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+          - !Not
+            - !Equals [!Ref ProdRoleSecret, '']
+        AssertDescription: ProdRoleSecret must be provided when EnvironmentNames includes prod.
+
+Conditions:
+  HasDev: !Or
+    - !Equals [!Ref EnvironmentNames, 'dev']
+    - !Equals [!Ref EnvironmentNames, 'dev,stg']
+    - !Equals [!Ref EnvironmentNames, 'dev,prod']
+    - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+  HasStg: !Or
+    - !Equals [!Ref EnvironmentNames, 'stg']
+    - !Equals [!Ref EnvironmentNames, 'dev,stg']
+    - !Equals [!Ref EnvironmentNames, 'stg,prod']
+    - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+  HasProd: !Or
+    - !Equals [!Ref EnvironmentNames, 'prod']
+    - !Equals [!Ref EnvironmentNames, 'dev,prod']
+    - !Equals [!Ref EnvironmentNames, 'stg,prod']
+    - !Equals [!Ref EnvironmentNames, 'dev,stg,prod']
+
+Resources:
+  CentralAccountIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/global/central-account/account-id
+      Type: String
+      Value: !Ref CentralAccountId
+      Description: Centralized Terraform backend AWS account ID
+
+  DevRoleSecretParameter:
+    Condition: HasDev
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/dev/terraform/state-file/role-secret
+      Type: String
+      Value: !Ref DevRoleSecret
+      Description: Terraform backend role secret suffix for the dev environment
+
+  StgRoleSecretParameter:
+    Condition: HasStg
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/stg/terraform/state-file/role-secret
+      Type: String
+      Value: !Ref StgRoleSecret
+      Description: Terraform backend role secret suffix for the stg environment
+
+  ProdRoleSecretParameter:
+    Condition: HasProd
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /terraform-core/prod/terraform/state-file/role-secret
+      Type: String
+      Value: !Ref ProdRoleSecret
+      Description: Terraform backend role secret suffix for the prod environment
+
+Outputs:
+  CentralAccountIdParameterName:
+    Value: /terraform-core/global/central-account/account-id
+    Description: SSM parameter name for the centralized backend AWS account ID
+
+  DevRoleSecretParameterName:
+    Condition: HasDev
+    Value: /terraform-core/dev/terraform/state-file/role-secret
+    Description: SSM parameter name for the dev backend role secret suffix
+
+  StgRoleSecretParameterName:
+    Condition: HasStg
+    Value: /terraform-core/stg/terraform/state-file/role-secret
+    Description: SSM parameter name for the stg backend role secret suffix
+
+  ProdRoleSecretParameterName:
+    Condition: HasProd
+    Value: /terraform-core/prod/terraform/state-file/role-secret
+    Description: SSM parameter name for the prod backend role secret suffix
+
+        
